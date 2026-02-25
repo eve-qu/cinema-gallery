@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- 安全策略：限制资源加载，防止XSS和点击劫持 -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; font-src 'none'; object-src 'none'; media-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none';">
+    
+    <!-- 防止页面被嵌入iframe（点击劫持保护） -->
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    
+    <!-- 防止MIME类型嗅探攻击 -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    
+    <!--  referrer策略：不发送referrer信息 -->
+    <meta name="referrer" content="no-referrer">
+    
+    <!-- 防缓存策略：确保每次加载都是最新版本，不在本地留存 -->
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    
+    <!-- 版权与声明 -->
+    <meta name="copyright" content="© 2024 Cinema Gallery. 开源工具，禁止用于非法目的。">
+    <meta name="description" content="本地图片浏览器，数据不上传任何服务器">
+    
+    <title>Cinema Gallery - 本地图片浏览器</title>
+    
+    <style>
+        /* 系统字体栈，不加载外部字体 */
+        * { 
+            margin: 0; 
+            padding: 0; 
+            box-sizing: border-box;
+            -webkit-user-drag: none;
+            -khtml-user-drag: none;
+            -moz-user-drag: none;
+            -o-user-drag: none;
+            user-drag: none;
+        }
+
+        :root {
+            --bg-dark: #0a0a0f;
+            --bg-darker: #050508;
+            --accent: #ff2a6d;
+            --accent-glow: rgba(255, 42, 109, 0.3);
+        }
+
+        [data-theme="pink"] { --accent: #ff2a6d; --accent-glow: rgba(255, 42, 109, 0.3); }
+        [data-theme="cyan"] { --accent: #00f0ff; --accent-glow: rgba(0, 240, 255, 0.3); }
+        [data-theme="green"] { --accent: #39ff14; --accent-glow: rgba(57, 255, 20, 0.3); }
+        [data-theme="orange"] { --accent: #ff6b35; --accent-glow: rgba(255, 107, 53, 0.3); }
+        [data-theme="purple"] { --accent: #b967ff; --accent-glow: rgba(185, 103, 255, 0.3); }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: radial-gradient(ellipse at center, var(--bg-dark) 0%, var(--bg-darker) 100%);
+            color: #e0e0e0;
+            overflow: hidden;
+            height: 100vh;
+            position: relative;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+        }
+
+        /* 全屏模式隐藏UI */
+        body.fullscreen-mode .top-bar,
+        body.fullscreen-mode .film-strip-container,
+        body.fullscreen-mode .progress-bar,
+        body.fullscreen-mode .keyboard-hint {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-100%);
+        }
+
+        body.fullscreen-mode .film-strip-container {
+            transform: translateY(100%);
+        }
+
+        body.fullscreen-mode .nav-btn {
+            opacity: 0;
+        }
+
+        body.fullscreen-mode:hover .nav-btn {
+            opacity: 1;
+        }
+
+        body.fullscreen-mode .cinema-stage {
+            padding: 0;
+        }
+
+        body.fullscreen-mode .exit-hint {
+            opacity: 1;
+        }
+
+        /* 顶部栏 */
+        .top-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            transition: all 0.3s;
+        }
+
+        .top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 30px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--accent);
+            text-shadow: 0 0 20px var(--accent-glow);
+            letter-spacing: 2px;
+            white-space: nowrap;
+        }
+
+        .controls-right {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .btn {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.3s;
+            font-weight: 600;
+            white-space: nowrap;
+            font-family: inherit;
+        }
+
+        .btn:hover {
+            background: var(--accent);
+            color: #000;
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        .btn-clear {
+            border-color: #ff4444;
+            color: #ff4444;
+        }
+
+        .btn-clear:hover {
+            background: #ff4444;
+            color: white;
+        }
+
+        .counter {
+            font-size: 14px;
+            color: rgba(255,255,255,0.7);
+            margin-right: 10px;
+        }
+
+        .counter span {
+            color: var(--accent);
+            font-weight: 700;
+            font-size: 16px;
+        }
+
+        .fullscreen-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: inherit;
+        }
+
+        .fullscreen-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            transform: scale(1.1);
+        }
+
+        /* 主题选择器 */
+        .theme-bar {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            padding-bottom: 10px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+        }
+
+        .theme-dot {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 3px solid transparent;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .theme-dot:hover {
+            transform: scale(1.2);
+            box-shadow: 0 0 15px currentColor;
+        }
+
+        .theme-dot.active {
+            border-color: white;
+            box-shadow: 0 0 20px currentColor;
+            transform: scale(1.1);
+        }
+
+        .theme-dot[data-theme="pink"] { background: #ff2a6d; }
+        .theme-dot[data-theme="cyan"] { background: #00f0ff; }
+        .theme-dot[data-theme="green"] { background: #39ff14; }
+        .theme-dot[data-theme="orange"] { background: #ff6b35; }
+        .theme-dot[data-theme="purple"] { background: #b967ff; }
+
+        /* 主舞台 */
+        .cinema-stage {
+            position: relative;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            perspective: 1500px;
+            overflow: hidden;
+            padding: 130px 0 160px 0;
+        }
+
+        .carousel-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transform-style: preserve-3d;
+        }
+
+        .image-card {
+            position: absolute;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: all 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .image-card.active {
+            z-index: 10;
+            transform: translateX(0) translateZ(0) rotateY(0) scale(1);
+            box-shadow: 0 0 0 2px var(--accent), 0 0 40px var(--accent-glow);
+        }
+
+        .image-card.prev {
+            transform: translateX(-55%) translateZ(-300px) rotateY(25deg) scale(0.85);
+            opacity: 0.5;
+            filter: brightness(0.6);
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        .image-card.next {
+            transform: translateX(55%) translateZ(-300px) rotateY(-25deg) scale(0.85);
+            opacity: 0.5;
+            filter: brightness(0.6);
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        .image-card.hidden {
+            transform: translateZ(-500px) scale(0.5);
+            opacity: 0;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .image-content {
+            max-width: 85vw;
+            max-height: 75vh;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            display: block;
+            cursor: pointer;
+            pointer-events: none;
+        }
+
+        /* 导航按钮 */
+        .nav-btn {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0,0,0,0.6);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            z-index: 100;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: inherit;
+        }
+
+        .nav-btn:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #000;
+        }
+
+        .nav-btn.prev { left: 30px; }
+        .nav-btn.next { right: 30px; }
+        .nav-btn.hidden { display: none; }
+
+        /* 胶片条 */
+        .film-strip-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 140px;
+            background: linear-gradient(to top, rgba(0,0,0,0.95), rgba(0,0,0,0.8));
+            border-top: 2px solid rgba(255,255,255,0.1);
+            z-index: 1000;
+            transition: transform 0.3s;
+        }
+
+        .film-strip {
+            display: flex;
+            align-items: center;
+            height: 100%;
+            padding: 15px 40px;
+            gap: 15px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: thin;
+            scrollbar-color: var(--accent) transparent;
+        }
+
+        .film-strip::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .film-strip::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.05);
+            border-radius: 3px;
+        }
+
+        .film-strip::-webkit-scrollbar-thumb {
+            background: var(--accent);
+            border-radius: 3px;
+        }
+
+        .thumb-frame {
+            position: relative;
+            flex-shrink: 0;
+            width: 100px;
+            height: 75px;
+            background: #000;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            overflow: hidden;
+            cursor: move;
+            transition: all 0.3s;
+        }
+
+        .thumb-frame:hover {
+            transform: translateY(-5px);
+            border-color: rgba(255,255,255,0.5);
+        }
+
+        .thumb-frame.active {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent), 0 0 20px var(--accent-glow);
+            transform: translateY(-8px) scale(1.05);
+        }
+
+        .thumb-frame.dragging {
+            opacity: 0.4;
+            cursor: grabbing;
+            transform: scale(1.1) rotate(3deg);
+            border-color: var(--accent);
+            z-index: 100;
+        }
+
+        .thumb-frame.over {
+            border-color: var(--accent);
+            transform: scale(1.05);
+        }
+
+        .thumb-frame img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            pointer-events: none;
+            -webkit-user-drag: none;
+        }
+
+        .thumb-index {
+            position: absolute;
+            bottom: 3px;
+            right: 3px;
+            background: rgba(0,0,0,0.8);
+            color: var(--accent);
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+
+        .delete-btn {
+            position: absolute;
+            top: 3px;
+            right: 3px;
+            width: 20px;
+            height: 20px;
+            background: rgba(255,0,0,0.8);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: inherit;
+            z-index: 10;
+        }
+
+        .thumb-frame:hover .delete-btn {
+            opacity: 1;
+        }
+
+        .delete-btn:hover {
+            background: #ff0000;
+            transform: scale(1.2);
+        }
+
+        .sort-hint {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 11px;
+            color: rgba(255,255,255,0.5);
+            pointer-events: none;
+        }
+
+        /* 进度条 */
+        .progress-bar {
+            position: fixed;
+            bottom: 140px;
+            left: 0;
+            height: 3px;
+            background: var(--accent);
+            box-shadow: 0 0 10px var(--accent-glow);
+            z-index: 999;
+            transition: width 0.3s;
+        }
+
+        /* 空状态 */
+        .empty-state {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            opacity: 0.6;
+        }
+
+        .empty-icon {
+            font-size: 60px;
+            margin-bottom: 20px;
+        }
+
+        .empty-text {
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        .empty-sub {
+            font-size: 13px;
+            opacity: 0.7;
+        }
+
+        /* 提示 */
+        .exit-hint {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 1000;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .keyboard-hint {
+            position: fixed;
+            right: 30px;
+            bottom: 160px;
+            font-size: 12px;
+            color: rgba(255,255,255,0.4);
+            text-align: right;
+            line-height: 1.8;
+        }
+
+        .toast {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            padding: 20px 40px;
+            border-radius: 30px;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            font-size: 14px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+            z-index: 2000;
+        }
+
+        .toast.show {
+            opacity: 1;
+        }
+
+        .loader {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            display: none;
+            z-index: 2000;
+        }
+
+        @keyframes spin {
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .top-row { padding: 10px 15px; }
+            .logo { font-size: 16px; }
+            .btn { padding: 6px 12px; font-size: 12px; }
+            .nav-btn { width: 40px; height: 40px; }
+            .nav-btn.prev { left: 10px; }
+            .nav-btn.next { right: 10px; }
+            .theme-dot { width: 24px; height: 24px; }
+            .keyboard-hint { display: none; }
+        }
+    </style>
+</head>
+<body data-theme="pink">
+    <div class="loader" id="loader"></div>
+    <div class="toast" id="toast"></div>
+    <div class="exit-hint">按 ESC 或 F 退出全屏</div>
+
+    <!-- 顶部栏 -->
+    <div class="top-bar">
+        <div class="top-row">
+            <div class="logo">🎬 CINEMA GALLERY</div>
+            
+            <div class="controls-right">
+                <div class="counter">
+                    <span id="currentCount">0</span> / 50
+                </div>
+                
+                <button class="btn" id="uploadBtn" type="button">📁 上传图片</button>
+                <input type="file" id="fileInput" multiple accept="image/*" style="display: none;">
+                
+                <button class="btn btn-clear" onclick="clearAll()" type="button">清空</button>
+                
+                <button class="fullscreen-btn" onclick="toggleFullscreen()" title="全屏 (F)" type="button">⛶</button>
+            </div>
+        </div>
+        
+        <div class="theme-bar">
+            <div class="theme-dot active" data-theme="pink" onclick="setTheme('pink')" title="霓虹粉"></div>
+            <div class="theme-dot" data-theme="cyan" onclick="setTheme('cyan')" title="赛博蓝"></div>
+            <div class="theme-dot" data-theme="green" onclick="setTheme('green')" title="毒液绿"></div>
+            <div class="theme-dot" data-theme="orange" onclick="setTheme('orange')" title="熔岩橙"></div>
+            <div class="theme-dot" data-theme="purple" onclick="setTheme('purple')" title="极光紫"></div>
+        </div>
+    </div>
+
+    <!-- 主舞台 -->
+    <div class="cinema-stage">
+        <div class="empty-state" id="emptyState">
+            <div class="empty-icon">🎥</div>
+            <div class="empty-text">点击右上角上传图片</div>
+            <div class="empty-sub">支持拖拽、粘贴、点击上传（纯本地处理）</div>
+        </div>
+        
+        <div class="carousel-container" id="carousel"></div>
+    </div>
+
+    <!-- 导航 -->
+    <button class="nav-btn prev" id="prevBtn" onclick="navigate(-1)" type="button">◀</button>
+    <button class="nav-btn next" id="nextBtn" onclick="navigate(1)" type="button">▶</button>
+
+    <!-- 键盘提示 -->
+    <div class="keyboard-hint">
+        操作指南：<br>
+        ← → 切换图片 | F 全屏<br>
+        Delete 删除 | Ctrl+V 粘贴<br>
+        拖拽底部排序
+    </div>
+
+    <!-- 进度条 -->
+    <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+
+    <!-- 胶片条 -->
+    <div class="film-strip-container">
+        <div class="sort-hint">👆 拖拽缩略图调整顺序</div>
+        <div class="film-strip" id="filmStrip"></div>
+    </div>
+
+    <script>
+        // 严格模式，更安全
+        'use strict';
+
+        // 应用状态
+        let images = [];
+        let currentIndex = 0;
+        let dragSrcEl = null;
+        const MAX_IMAGES = 50;
+
+        // DOM 引用缓存
+        const dom = {
+            body: document.body,
+            loader: document.getElementById('loader'),
+            toast: document.getElementById('toast'),
+            currentCount: document.getElementById('currentCount'),
+            emptyState: document.getElementById('emptyState'),
+            carousel: document.getElementById('carousel'),
+            filmStrip: document.getElementById('filmStrip'),
+            progressBar: document.getElementById('progressBar'),
+            prevBtn: document.getElementById('prevBtn'),
+            nextBtn: document.getElementById('nextBtn'),
+            fileInput: document.getElementById('fileInput'),
+            uploadBtn: document.getElementById('uploadBtn')
+        };
+
+        // 初始化主题
+        function initTheme() {
+            try {
+                const saved = localStorage.getItem('cinema-theme');
+                if (saved && ['pink', 'cyan', 'green', 'orange', 'purple'].includes(saved)) {
+                    setTheme(saved);
+                }
+            } catch (e) {
+                // localStorage 不可用时的静默处理
+                console.log('Theme storage not available');
+            }
+        }
+
+        function setTheme(theme) {
+            dom.body.setAttribute('data-theme', theme);
+            document.querySelectorAll('.theme-dot').forEach(dot => {
+                dot.classList.toggle('active', dot.dataset.theme === theme);
+            });
+            try {
+                localStorage.setItem('cinema-theme', theme);
+            } catch (e) {
+                // 忽略存储错误
+            }
+        }
+
+        // 显示提示
+        function showToast(msg) {
+            dom.toast.textContent = msg;
+            dom.toast.classList.add('show');
+            setTimeout(() => dom.toast.classList.remove('show'), 2000);
+        }
+
+        // 上传功能 - 安全绑定
+        function initUpload() {
+            dom.uploadBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dom.fileInput.click();
+            });
+
+            dom.fileInput.addEventListener('change', handleFiles);
+        }
+
+        function handleFiles(e) {
+            const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+            if (!files.length) return;
+            processFiles(files);
+            e.target.value = '';
+        }
+
+        // 处理文件 - 纯前端处理，不上传服务器
+        function processFiles(files) {
+            if (images.length + files.length > MAX_IMAGES) {
+                alert(`最多只能上传 ${MAX_IMAGES} 张图片`);
+                files = files.slice(0, MAX_IMAGES - images.length);
+            }
+            if (!files.length) return;
+
+            dom.loader.style.display = 'block';
+            
+            Promise.all(files.map(file => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => resolve({
+                        id: Date.now() + Math.random(),
+                        src: e.target.result,
+                        width: img.width,
+                        height: img.height
+                    });
+                    img.onerror = () => reject(new Error('图片加载失败'));
+                    img.src = e.target.result;
+                };
+                reader.onerror = () => reject(new Error('文件读取失败'));
+                reader.readAsDataURL(file);
+            }))).then(newImages => {
+                images = [...images, ...newImages];
+                updateDisplay();
+                dom.loader.style.display = 'none';
+                goToIndex(images.length === newImages.length ? 0 : images.length - newImages.length);
+            }).catch(err => {
+                console.error(err);
+                dom.loader.style.display = 'none';
+                showToast('部分图片加载失败');
+            });
+        }
+
+        // 拖拽上传 - 限制在页面内
+        function initDragDrop() {
+            let dragCounter = 0;
+            
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                document.body.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, false);
+            });
+
+            document.body.addEventListener('dragenter', () => {
+                dragCounter++;
+                if (dragCounter === 1) showToast('释放以上传图片');
+            });
+
+            document.body.addEventListener('dragleave', () => {
+                dragCounter--;
+            });
+
+            document.body.addEventListener('drop', (e) => {
+                dragCounter = 0;
+                const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+                if (files.length) processFiles(files);
+            });
+        }
+
+        // 粘贴上传
+        function initPaste() {
+            document.addEventListener('paste', (e) => {
+                const items = e.clipboardData.items;
+                const files = [];
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].type.indexOf('image') !== -1) {
+                        const file = items[i].getAsFile();
+                        if (file) files.push(file);
+                    }
+                }
+                if (files.length) {
+                    showToast('正在粘贴上传...');
+                    processFiles(files);
+                }
+            });
+        }
+
+        // 全屏功能
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {
+                    showToast('全屏模式不可用');
+                });
+                dom.body.classList.add('fullscreen-mode');
+            } else {
+                document.exitFullscreen();
+                dom.body.classList.remove('fullscreen-mode');
+            }
+        }
+
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement) {
+                dom.body.classList.remove('fullscreen-mode');
+            }
+        });
+
+        // 渲染功能
+        function updateDisplay() {
+            dom.currentCount.textContent = images.length;
+            dom.emptyState.style.display = images.length ? 'none' : 'block';
+            
+            if (!images.length) {
+                dom.carousel.innerHTML = '';
+                dom.filmStrip.innerHTML = '';
+                dom.progressBar.style.width = '0%';
+                return;
+            }
+
+            renderCarousel();
+            renderFilmStrip();
+            updateProgress();
+        }
+
+        function renderCarousel() {
+            dom.carousel.innerHTML = '';
+            
+            images.forEach((img, idx) => {
+                const card = document.createElement('div');
+                card.className = 'image-card';
+                
+                if (idx === currentIndex) card.classList.add('active');
+                else if (idx === currentIndex - 1) card.classList.add('prev');
+                else if (idx === currentIndex + 1) card.classList.add('next');
+                else card.classList.add('hidden');
+
+                const maxW = window.innerWidth * 0.85;
+                const maxH = window.innerHeight * 0.75;
+                const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+                
+                card.style.width = (img.width * scale) + 'px';
+                card.style.height = (img.height * scale) + 'px';
+                
+                const imgEl = document.createElement('img');
+                imgEl.src = img.src;
+                imgEl.className = 'image-content';
+                imgEl.draggable = false;
+                imgEl.ondblclick = toggleFullscreen;
+                
+                card.appendChild(imgEl);
+                card.onclick = () => goToIndex(idx);
+                dom.carousel.appendChild(card);
+            });
+        }
+
+        function renderFilmStrip() {
+            dom.filmStrip.innerHTML = '';
+            
+            images.forEach((img, idx) => {
+                const frame = document.createElement('div');
+                frame.className = 'thumb-frame' + (idx === currentIndex ? ' active' : '');
+                frame.draggable = true;
+                frame.dataset.index = idx;
+                
+                const imgEl = document.createElement('img');
+                imgEl.src = img.src;
+                imgEl.draggable = false;
+                
+                const indexEl = document.createElement('span');
+                indexEl.className = 'thumb-index';
+                indexEl.textContent = idx + 1;
+                
+                const delBtn = document.createElement('button');
+                delBtn.className = 'delete-btn';
+                delBtn.textContent = '×';
+                delBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    deleteImage(idx);
+                };
+                
+                frame.appendChild(imgEl);
+                frame.appendChild(indexEl);
+                frame.appendChild(delBtn);
+                
+                // 拖拽排序
+                frame.addEventListener('dragstart', function(e) {
+                    dragSrcEl = this;
+                    this.classList.add('dragging');
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', '');
+                });
+                
+                frame.addEventListener('dragend', function() {
+                    this.classList.remove('dragging');
+                    document.querySelectorAll('.thumb-frame').forEach(f => f.classList.remove('over'));
+                    dragSrcEl = null;
+                });
+                
+                frame.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    return false;
+                });
+                
+                frame.addEventListener('dragenter', function() {
+                    if (this !== dragSrcEl) this.classList.add('over');
+                });
+                
+                frame.addEventListener('dragleave', function() {
+                    this.classList.remove('over');
+                });
+                
+                frame.addEventListener('drop', function(e) {
+                    e.stopPropagation();
+                    if (dragSrcEl === this) return false;
+                    
+                    const fromIdx = parseInt(dragSrcEl.dataset.index);
+                    const toIdx = parseInt(this.dataset.index);
+                    
+                    const item = images[fromIdx];
+                    images.splice(fromIdx, 1);
+                    images.splice(toIdx, 0, item);
+                    
+                    if (currentIndex === fromIdx) currentIndex = toIdx;
+                    else if (fromIdx < currentIndex && toIdx >= currentIndex) currentIndex--;
+                    else if (fromIdx > currentIndex && toIdx <= currentIndex) currentIndex++;
+                    
+                    updateDisplay();
+                    return false;
+                });
+                
+                frame.addEventListener('click', () => goToIndex(idx));
+                dom.filmStrip.appendChild(frame);
+            });
+        }
+
+        function navigate(dir) {
+            const newIdx = currentIndex + dir;
+            if (newIdx >= 0 && newIdx < images.length) goToIndex(newIdx);
+        }
+
+        function goToIndex(idx) {
+            currentIndex = idx;
+            updateDisplay();
+            
+            const thumbs = dom.filmStrip.querySelectorAll('.thumb-frame');
+            if (thumbs[idx]) {
+                thumbs[idx].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+            }
+        }
+
+        function updateProgress() {
+            dom.progressBar.style.width = images.length ? ((currentIndex + 1) / images.length * 100) + '%' : '0%';
+            dom.prevBtn.classList.toggle('hidden', currentIndex === 0);
+            dom.nextBtn.classList.toggle('hidden', currentIndex === images.length - 1);
+        }
+
+        function deleteImage(idx) {
+            images.splice(idx, 1);
+            if (currentIndex >= images.length) currentIndex = Math.max(0, images.length - 1);
+            updateDisplay();
+        }
+
+        function clearAll() {
+            if (!images.length || !confirm('确定清空所有图片？')) return;
+            images = [];
+            currentIndex = 0;
+            updateDisplay();
+        }
+
+        // 键盘控制
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') navigate(-1);
+            if (e.key === 'ArrowRight') navigate(1);
+            if (e.key.toLowerCase() === 'f') toggleFullscreen();
+            if (e.key === 'Escape') {
+                if (document.fullscreenElement) {
+                    document.exitFullscreen();
+                    dom.body.classList.remove('fullscreen-mode');
+                }
+            }
+            if (e.key === 'Delete' && images.length) deleteImage(currentIndex);
+        });
+
+        // 触摸滑动
+        let touchStartX = 0;
+        document.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+        }, {passive: true});
+
+        document.addEventListener('touchend', (e) => {
+            const diff = touchStartX - e.changedTouches[0].screenX;
+            if (Math.abs(diff) > 50) {
+                diff > 0 ? navigate(1) : navigate(-1);
+            }
+        }, {passive: true});
+
+        // 窗口调整防抖
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                if (images.length) renderCarousel();
+            }, 200);
+        });
+
+        // 初始化
+        initTheme();
+        initUpload();
+        initDragDrop();
+        initPaste();
+    </script>
+</body>
+</html>
